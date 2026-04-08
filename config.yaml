@@ -1,0 +1,65 @@
+# Default configuration for speech classification experiments
+
+# Dataset
+data:
+  root: './data'
+  batch_size: 64
+  num_workers: 4
+  sample_rate: 16000
+  max_length: 16000
+
+# Model
+model: 'lstm'  # lstm, transformer, lssl
+input_type: 'raw'  # raw, conv, mfcc
+
+# Input preprocessing
+conv_frontend:
+  hidden_channels: [32, 64]
+  kernel_size: 5
+  stride: 2
+
+mfcc:
+  n_mfcc: 40
+
+# LSTM config
+lstm:
+  hidden_dim: 128
+  num_layers: 3
+  bidirectional: true
+  dropout: 0.3
+  pooling: 'mean'
+
+# Transformer config
+transformer:
+  d_model: 128
+  nhead: 8
+  num_layers: 4
+  dim_feedforward: 512
+  dropout: 0.1
+  pooling: 'mean'
+
+# LSSL config
+lssl:
+  d_model: 128
+  d_state: 64
+  num_layers: 4
+  dropout: 0.1
+  pooling: 'mean'
+  lssl_variant: 'vanilla'  # vanilla, hippo_fixed, hippo_learned
+  prenorm: false
+
+# Training
+training:
+  epochs: 50
+  learning_rate: 0.001
+  weight_decay: 0.01
+  seed: 42
+
+# Logging
+logging:
+  log_dir: './logs'
+  tensorboard_dir: './runs'
+  print_freq: 10
+
+# Device
+device: 'cuda'  # cuda or cpu
