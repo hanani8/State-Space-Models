@@ -9,7 +9,7 @@ data:
   max_length: 16000
 
 # Model
-model: 'lstm'  # lstm, transformer, lssl
+model: 'lstm'  # lstm, transformer, s4
 input_type: 'raw'  # raw, conv, mfcc
 
 # Input preprocessing
@@ -38,15 +38,17 @@ transformer:
   dropout: 0.1
   pooling: 'mean'
 
-# LSSL config
-lssl:
+# S4 / S4D config
+s4:
+  ssm_type: 's4d'    # 's4d' (diagonal, NeurIPS 2022) or 's4' (NPLR/HiPPO-LegS, ICLR 2022)
   d_model: 128
-  d_state: 64
-  num_layers: 4
+  d_state: 64        # SSM state size N; ablate with 32 / 128 / 256
+  num_layers: 4      # depth; ablate with 2 / 6
   dropout: 0.1
   pooling: 'mean'
-  lssl_variant: 'vanilla'  # vanilla, hippo_fixed, hippo_learned
-  prenorm: false
+  prenorm: true      # prenorm is recommended for S4-family models
+  dt_min: 0.001      # min timescale ~1 ms  (covers fast phonetic events)
+  dt_max: 0.1        # max timescale ~100 ms (covers word-level patterns)
 
 # Training
 training:

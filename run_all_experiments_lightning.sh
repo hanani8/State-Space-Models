@@ -1,47 +1,56 @@
 #!/bin/bash
+# Core comparison with PyTorch Lightning (multi-GPU support).
+# Usage: bash run_all_experiments_lightning.sh [--epochs N]
 
-# Script to run all 9 model configurations with PyTorch Lightning
-# Automatically uses all available GPUs
-# Usage: bash run_all_experiments_lightning.sh
+EPOCHS=30
+if [[ "$1" == "--epochs" ]]; then
+    EPOCHS=$2
+fi
 
-echo "Starting speech classification benchmarks (PyTorch Lightning + Multi-GPU)..."
+echo "Starting speech classification benchmarks (PyTorch Lightning, epochs=$EPOCHS)"
 echo "==============================================================================="
 
-# Auto-detect number of GPUs
 NUM_GPUS=$(python -c "import torch; print(torch.cuda.device_count())")
 echo "Detected $NUM_GPUS GPU(s)"
 echo ""
 
-# LSTM experiments
+# ── LSTM ──────────────────────────────────────────────────────────────────────
 echo -e "\n[1/9] LSTM + Raw Waveform"
-python train_lightning.py --model lstm --input_type raw --epochs 30 --gpus $NUM_GPUS
+python train_lightning.py --model lstm --input_type raw --epochs $EPOCHS --gpus $NUM_GPUS
 
 echo -e "\n[2/9] LSTM + Conv Frontend"
-python train_lightning.py --model lstm --input_type conv --epochs 30 --gpus $NUM_GPUS
+python train_lightning.py --model lstm --input_type conv --epochs $EPOCHS --gpus $NUM_GPUS
 
 echo -e "\n[3/9] LSTM + MFCC"
-python train_lightning.py --model lstm --input_type mfcc --epochs 30 --gpus $NUM_GPUS
+python train_lightning.py --model lstm --input_type mfcc --epochs $EPOCHS --gpus $NUM_GPUS
 
-# Transformer experiments
+# ── Transformer ───────────────────────────────────────────────────────────────
 echo -e "\n[4/9] Transformer + Raw Waveform"
-python train_lightning.py --model transformer --input_type raw --epochs 30 --gpus $NUM_GPUS
+python train_lightning.py --model transformer --input_type raw --epochs $EPOCHS --gpus $NUM_GPUS
 
 echo -e "\n[5/9] Transformer + Conv Frontend"
-python train_lightning.py --model transformer --input_type conv --epochs 30 --gpus $NUM_GPUS
+python train_lightning.py --model transformer --input_type conv --epochs $EPOCHS --gpus $NUM_GPUS
 
 echo -e "\n[6/9] Transformer + MFCC"
-python train_lightning.py --model transformer --input_type mfcc --epochs 30 --gpus $NUM_GPUS
+python train_lightning.py --model transformer --input_type mfcc --epochs $EPOCHS --gpus $NUM_GPUS
 
-# LSSL experiments
-echo -e "\n[7/9] LSSL Vanilla (Random Init)"
-python train_lightning.py --model lssl --input_type raw --lssl_variant vanilla --epochs 30 --gpus $NUM_GPUS
+# ── S4D (diagonal SSM, NeurIPS 2022) ─────────────────────────────────────────
+echo -e "\n[7/9] S4D + Raw Waveform  (diagonal, N=64)"
+conda run -n ssm python train_lightning.py --model s4 --input_type raw  --ssm_type s4d --epochs $EPOCHS --gpus $NUM_GPUS
 
-echo -e "\n[8/9] LSSL HiPPO Fixed"
-python train_lightning.py --model lssl --input_type raw --lssl_variant hippo_fixed --epochs 30 --gpus $NUM_GPUS
+echo -e "\n[8/9] S4D + Conv Frontend"
+conda run -n ssm python train_lightning.py --model s4 --input_type conv --ssm_type s4d --epochs $EPOCHS --gpus $NUM_GPUS
 
-echo -e "\n[9/9] LSSL HiPPO Learned"
-python train_lightning.py --model lssl --input_type raw --lssl_variant hippo_learned --epochs 30 --gpus $NUM_GPUS
+echo -e "\n[9/9] S4D + MFCC"
+conda run -n ssm python train_lightning.py --model s4 --input_type mfcc --ssm_type s4d --epochs $EPOCHS --gpus $NUM_GPUS
+
+# ── S4 (NPLR + HiPPO-LegS, ICLR 2022) ───────────────────────────────────────
+echo -e "\n[10/11] S4 + Raw Waveform  (NPLR/HiPPO-LegS, N=64)"
+conda run -n ssm python train_lightning.py --model s4 --input_type raw  --ssm_type s4 --epochs $EPOCHS --gpus $NUM_GPUS
+
+echo -e "\n[11/11] S4 + MFCC"
+conda run -n ssm python train_lightning.py --model s4 --input_type mfcc --ssm_type s4 --epochs $EPOCHS --gpus $NUM_GPUS
 
 echo -e "\n==============================================================================="
-echo "All experiments completed!"
-echo "View results with: tensorboard --logdir runs"
+echo "Core comparison complete."
+echo "View results: tensorboard --logdir runs"

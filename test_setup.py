@@ -32,10 +32,10 @@ def test_imports():
         return False
 
     try:
-        from models.lssl import LSSLModel
-        print("✓ LSSL model (S4 integration)")
+        from models.s4_model import S4Model
+        print("✓ S4 model (S4D integration)")
     except Exception as e:
-        print(f"✗ LSSL model: {e}")
+        print(f"✗ S4 model: {e}")
         print("  Make sure S4 repo is cloned and dependencies installed")
         return False
 
@@ -81,15 +81,15 @@ def test_model_creation():
         return False
 
     try:
-        from models.lssl import LSSLModel
-        # Test vanilla variant
-        model = LSSLModel(input_dim=40, num_classes=num_classes, lssl_variant='vanilla')
-        x = torch.randn(batch_size, seq_len, 40)
-        y = model(x)
-        assert y.shape == (batch_size, num_classes)
-        print("✓ LSSL model (vanilla)")
+        from models.s4_model import S4Model
+        for stype in ('s4d', 's4'):
+            model = S4Model(input_dim=40, num_classes=num_classes, ssm_type=stype)
+            x = torch.randn(batch_size, seq_len, 40)
+            y = model(x)
+            assert y.shape == (batch_size, num_classes)
+            print(f"✓ S4Model (ssm_type='{stype}')")
     except Exception as e:
-        print(f"✗ LSSL model: {e}")
+        print(f"✗ S4 model: {e}")
         return False
 
     try:
@@ -139,7 +139,7 @@ def main():
     print("\nYou can now run experiments with:")
     print("  python train.py --model lstm --input_type raw")
     print("  python train.py --model transformer --input_type mfcc")
-    print("  python train.py --model lssl --input_type raw --lssl_variant hippo_learned")
+    print("  python train.py --model s4 --input_type raw")
     print("\nOr run all experiments with:")
     print("  bash run_all_experiments.sh")
 

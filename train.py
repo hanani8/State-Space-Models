@@ -15,7 +15,7 @@ import numpy as np
 from data.dataset import get_dataloaders
 from models.lstm import LSTMModel
 from models.transformer import TransformerModel
-from models.lssl import LSSLModel
+from models.s4_model import S4Model
 from models.conv_frontend import Conv1DFrontend
 from features.mfcc import MFCCTransform
 from utils import setup_optimizer, count_parameters, MetricsLogger, evaluate
@@ -91,9 +91,9 @@ def build_model(config, num_classes, device):
             dropout=model_config['dropout'],
             pooling=model_config['pooling']
         )
-    elif model_type == 'lssl':
-        model_config = config['lssl']
-        model = LSSLModel(
+    elif model_type == 's4':
+        model_config = config['s4']
+        model = S4Model(
             input_dim=input_dim,
             d_model=model_config['d_model'],
             d_state=model_config['d_state'],
@@ -101,8 +101,10 @@ def build_model(config, num_classes, device):
             num_classes=num_classes,
             dropout=model_config['dropout'],
             pooling=model_config['pooling'],
-            lssl_variant=model_config['lssl_variant'],
-            prenorm=model_config['prenorm']
+            prenorm=model_config['prenorm'],
+            dt_min=model_config['dt_min'],
+            dt_max=model_config['dt_max'],
+            ssm_type=model_config['ssm_type'],
         )
     else:
         raise ValueError(f"Unknown model type: {model_type}")
@@ -190,11 +192,15 @@ def main():
     parser.add_argument('--config', type=str, default='config.yaml',
                         help='Path to config file')
     parser.add_argument('--model', type=str, default=None,
-                        help='Model type: lstm, transformer, lssl')
+                        help='Model type: lstm, transformer, s4')
     parser.add_argument('--input_type', type=str, default=None,
                         help='Input type: raw, conv, mfcc')
-    parser.add_argument('--lssl_variant', type=str, default=None,
-                        help='LSSL variant: vanilla, hippo_fixed, hippo_learned')
+    parser.add_argument('--ssm_type', type=str, default=None,
+                        help='SSM backend: s4d (diagonal, NeurIPS 2022) or s4 (NPLR, ICLR 2022)')
+    parser.add_argument('--d_state', type=int, default=None,
+                        help='S4/S4D state size N (overrides config s4.d_state)')
+    parser.add_argument('--num_layers', type=int, default=None,
+                        help='Number of S4/LSTM/Transformer layers (overrides config)')
     parser.add_argument('--batch_size', type=int, default=None,
                         help='Batch size')
     parser.add_argument('--learning_rate', type=float, default=None,
@@ -217,8 +223,12 @@ def main():
         config['model'] = args.model
     if args.input_type:
         config['input_type'] = args.input_type
-    if args.lssl_variant:
-        config['lssl']['lssl_variant'] = args.lssl_variant
+    if args.ssm_type:
+        config['s4']['ssm_type'] = args.ssm_type
+    if args.d_state:
+        config['s4']['d_state'] = args.d_state
+    if args.num_layers:
+        config[config['model']]['num_layers'] = args.num_layers
     if args.batch_size:
         config['data']['batch_size'] = args.batch_size
     if args.learning_rate:
@@ -243,8 +253,10 @@ def main():
     print(f"Configuration:")
     print(f"  Model: {config['model']}")
     print(f"  Input: {config['input_type']}")
-    if config['model'] == 'lssl':
-        print(f"  LSSL Variant: {config['lssl']['lssl_variant']}")
+    if config['model'] == 's4':
+        print(f"  SSM type: {config['s4']['ssm_type']}")
+        print(f"  d_state:   {config['s4']['d_state']}")
+        print(f"  num_layers:{config['s4']['num_layers']}")
     print(f"  Device: {device}")
     print(f"{'='*80}\n")
 
@@ -279,8 +291,8 @@ def main():
 
     # Setup logging
     exp_name = f"{config['model']}_{config['input_type']}"
-    if config['model'] == 'lssl':
-        exp_name += f"_{config['lssl']['lssl_variant']}"
+    if config['model'] == 's4':
+        exp_name += f"_{config['s4']['ssm_type']}_N{config['s4']['d_state']}"
 
     os.makedirs(config['logging']['log_dir'], exist_ok=True)
     os.makedirs(config['logging']['tensorboard_dir'], exist_ok=True)
