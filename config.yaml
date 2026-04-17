@@ -7,7 +7,10 @@ data:
   num_workers: 4
   sample_rate: 16000
   max_length: 16000
-  subset_fraction: 0.3  # fraction of training data to use (0.0, 1.0]; 1.0 = full dataset
+  subset_fraction: 0.5  # fraction of training data to use (0.0, 1.0]; 1.0 = full dataset
+  # Subset of class names to use. null = all 35 classes.
+  # Example 10-class benchmark: [yes, no, up, down, left, right, on, off, go, stop]
+  classes: [zero, one, two, three, four, five, six, seven, eight, nine]
 
 # Model
 model: 'lstm'  # lstm, transformer, s4
@@ -66,3 +69,11 @@ logging:
 
 # Device
 device: 'cuda'  # cuda or cpu
+
+# Weights & Biases experiment tracking
+wandb:
+  enabled: false
+  project: 'speech-ssm'
+  # Set experiment_id to a string to name a run or resume an interrupted one.
+  # null = always start a fresh run with an auto-generated ID.
+  experiment_id: null

@@ -11,7 +11,7 @@ class PositionalEncoding(nn.Module):
     Sinusoidal positional encoding.
     """
 
-    def __init__(self, d_model: int, max_len: int = 5000, dropout: float = 0.1):
+    def __init__(self, d_model: int, max_len: int = 20000, dropout: float = 0.1):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
 

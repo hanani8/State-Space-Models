@@ -1,17 +1,28 @@
 """
-SPEECHCOMMANDS dataset loader with configurable preprocessing.
+SPEECHCOMMANDS dataset loader with configurable preprocessing and class filtering.
 """
 import os
 import torch
 import torchaudio
-from torch.utils.data import Dataset, DataLoader, Subset, random_split
-from typing import Tuple, Optional
+from torch.utils.data import Dataset, DataLoader, Subset
+from typing import Tuple, Optional, List
 
 
 class SpeechCommandsDataset(Dataset):
     """
-    Wrapper for SPEECHCOMMANDS dataset with preprocessing.
+    Wrapper for SPEECHCOMMANDS v0.02 with preprocessing and optional class filtering.
+
+    When `classes` is provided, only those classes are included and labels are
+    remapped to consecutive indices [0, len(classes)).  The canonical ordering of
+    ALL_CLASSES is preserved so indices are consistent across train/val/test.
     """
+
+    ALL_CLASSES: List[str] = [
+        'backward', 'bed', 'bird', 'cat', 'dog', 'down', 'eight', 'five',
+        'follow', 'forward', 'four', 'go', 'happy', 'house', 'learn', 'left',
+        'marvin', 'nine', 'no', 'off', 'on', 'one', 'right', 'seven', 'sheila',
+        'six', 'stop', 'three', 'tree', 'two', 'up', 'visual', 'wow', 'yes', 'zero'
+    ]
 
     def __init__(
         self,
@@ -19,81 +30,82 @@ class SpeechCommandsDataset(Dataset):
         subset: str = 'training',
         sample_rate: int = 16000,
         max_length: int = 16000,
-        download: bool = True
+        download: bool = True,
+        classes: Optional[List[str]] = None,
     ):
         """
         Args:
-            root: Root directory for dataset
+            root: Root directory for dataset storage
             subset: 'training', 'validation', or 'testing'
             sample_rate: Target sample rate (Hz)
-            max_length: Fixed sequence length (samples)
-            download: Whether to download dataset
+            max_length: Fixed sequence length in samples (pad/trim)
+            download: Download dataset if missing
+            classes: Class names to include (None = all 35)
         """
         self.sample_rate = sample_rate
-        self.max_length = max_length
+        self.max_length  = max_length
 
-        # Load SPEECHCOMMANDS dataset
         self.dataset = torchaudio.datasets.SPEECHCOMMANDS(
             root=root,
             download=download,
-            subset=subset
+            subset=subset,
         )
 
-        # Fixed class labels for SPEECHCOMMANDS v0.02 (35 classes)
-        # Much faster than iterating through entire dataset
-        self.classes = [
-            'backward', 'bed', 'bird', 'cat', 'dog', 'down', 'eight', 'five',
-            'follow', 'forward', 'four', 'go', 'happy', 'house', 'learn', 'left',
-            'marvin', 'nine', 'no', 'off', 'on', 'one', 'right', 'seven', 'sheila',
-            'six', 'stop', 'three', 'tree', 'two', 'up', 'visual', 'wow', 'yes', 'zero'
-        ]
+        if classes is not None:
+            invalid = set(classes) - set(self.ALL_CLASSES)
+            if invalid:
+                raise ValueError(
+                    f"Unknown classes: {sorted(invalid)}\nValid: {self.ALL_CLASSES}"
+                )
+            # Preserve canonical ordering for consistent label indices across splits
+            self.classes = [c for c in self.ALL_CLASSES if c in set(classes)]
+        else:
+            self.classes = list(self.ALL_CLASSES)
+
         self.class_to_idx = {c: i for i, c in enumerate(self.classes)}
-        self.num_classes = len(self.classes)
+        self.num_classes   = len(self.classes)
+
+        # Build a filtered index list using file paths — no audio loaded here.
+        # _walker entries are absolute paths: .../speech_commands_v0.02/<word>/<file>.wav
+        if classes is not None:
+            classes_set  = set(self.classes)
+            self._indices = [
+                i for i, path in enumerate(self.dataset._walker)
+                if os.path.basename(os.path.dirname(path)) in classes_set
+            ]
+        else:
+            self._indices = list(range(len(self.dataset)))
 
     def __len__(self) -> int:
-        return len(self.dataset)
+        return len(self._indices)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
         """
         Returns:
-            waveform: (seq_len,) normalized waveform
-            label: integer class label
+            waveform: (max_length,) normalized float32 tensor
+            label_idx: integer class index in [0, num_classes)
         """
-        waveform, sample_rate, label, *_ = self.dataset[idx]
+        waveform, sample_rate, label, *_ = self.dataset[self._indices[idx]]
 
-        # Resample if needed
         if sample_rate != self.sample_rate:
-            resampler = torchaudio.transforms.Resample(sample_rate, self.sample_rate)
-            waveform = resampler(waveform)
+            waveform = torchaudio.transforms.Resample(sample_rate, self.sample_rate)(waveform)
 
-        # Convert to mono if stereo
         if waveform.shape[0] > 1:
             waveform = torch.mean(waveform, dim=0, keepdim=True)
-        else:
-            waveform = waveform
 
-        # Squeeze channel dimension
         waveform = waveform.squeeze(0)
 
-        # Pad or trim to fixed length
         if waveform.shape[0] < self.max_length:
-            # Pad with zeros
             waveform = torch.nn.functional.pad(
-                waveform,
-                (0, self.max_length - waveform.shape[0])
+                waveform, (0, self.max_length - waveform.shape[0])
             )
         else:
-            # Trim
             waveform = waveform[:self.max_length]
 
-        # Normalize
         if waveform.abs().max() > 0:
             waveform = waveform / waveform.abs().max()
 
-        # Convert label to index
-        label_idx = self.class_to_idx[label]
-
-        return waveform, label_idx
+        return waveform, self.class_to_idx[label]
 
 
 def get_dataloaders(
@@ -104,71 +116,41 @@ def get_dataloaders(
     max_length: int = 16000,
     download: bool = True,
     subset_fraction: float = 1.0,
-    seed: int = 42
+    seed: int = 42,
+    classes: Optional[List[str]] = None,
 ) -> Tuple[DataLoader, DataLoader, DataLoader, int]:
     """
     Create train, validation, and test dataloaders.
 
+    Args:
+        classes: Subset of class names (None = all 35).
+                 Labels are remapped to [0, len(classes)).
+
     Returns:
         train_loader, val_loader, test_loader, num_classes
     """
-    # Create datasets
-    train_dataset = SpeechCommandsDataset(
-        root=root,
-        subset='training',
-        sample_rate=sample_rate,
-        max_length=max_length,
-        download=download
+    shared = dict(
+        root=root, sample_rate=sample_rate,
+        max_length=max_length, download=download, classes=classes,
     )
 
-    num_classes = train_dataset.num_classes
+    train_dataset = SpeechCommandsDataset(subset='training',   **shared)
+    num_classes   = train_dataset.num_classes
 
     if subset_fraction < 1.0:
-        n = len(train_dataset)
-        k = max(1, int(n * subset_fraction))
-        rng = torch.Generator().manual_seed(seed)
+        n       = len(train_dataset)
+        k       = max(1, int(n * subset_fraction))
+        rng     = torch.Generator().manual_seed(seed)
         indices = torch.randperm(n, generator=rng)[:k].tolist()
         train_dataset = Subset(train_dataset, indices)
 
-    val_dataset = SpeechCommandsDataset(
-        root=root,
-        subset='validation',
-        sample_rate=sample_rate,
-        max_length=max_length,
-        download=download
-    )
+    val_dataset  = SpeechCommandsDataset(subset='validation', **shared)
+    test_dataset = SpeechCommandsDataset(subset='testing',    **shared)
 
-    test_dataset = SpeechCommandsDataset(
-        root=root,
-        subset='testing',
-        sample_rate=sample_rate,
-        max_length=max_length,
-        download=download
-    )
+    loader_kwargs = dict(num_workers=num_workers, pin_memory=True, batch_size=batch_size)
 
-    # Create dataloaders
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=True
-    )
-
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=True
-    )
-
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=True
-    )
+    train_loader = DataLoader(train_dataset, shuffle=True,  **loader_kwargs)
+    val_loader   = DataLoader(val_dataset,   shuffle=False, **loader_kwargs)
+    test_loader  = DataLoader(test_dataset,  shuffle=False, **loader_kwargs)
 
     return train_loader, val_loader, test_loader, num_classes

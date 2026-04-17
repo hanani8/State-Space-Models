@@ -20,6 +20,12 @@ from models.conv_frontend import Conv1DFrontend
 from features.mfcc import MFCCTransform
 from utils import setup_optimizer, count_parameters, MetricsLogger, evaluate
 
+try:
+    import wandb
+    WANDB_AVAILABLE = True
+except ImportError:
+    WANDB_AVAILABLE = False
+
 
 def set_seed(seed):
     """Set random seeds for reproducibility."""
@@ -211,6 +217,14 @@ def main():
                         help='Random seed')
     parser.add_argument('--device', type=str, default=None,
                         help='Device: cuda or cpu')
+    parser.add_argument('--classes', type=str, default=None,
+                        help='Comma-separated class subset, e.g. yes,no,go,stop (overrides config)')
+    parser.add_argument('--wandb', action='store_true',
+                        help='Enable Weights & Biases logging')
+    parser.add_argument('--wandb_project', type=str, default=None,
+                        help='W&B project name (overrides config wandb.project)')
+    parser.add_argument('--experiment_id', type=str, default=None,
+                        help='W&B run ID — set to resume an interrupted run or group related runs')
 
     args = parser.parse_args()
 
@@ -239,6 +253,14 @@ def main():
         config['training']['seed'] = args.seed
     if args.device:
         config['device'] = args.device
+    if args.classes:
+        config['data']['classes'] = [c.strip() for c in args.classes.split(',')]
+    if args.wandb:
+        config.setdefault('wandb', {})['enabled'] = True
+    if args.wandb_project:
+        config.setdefault('wandb', {})['project'] = args.wandb_project
+    if args.experiment_id:
+        config.setdefault('wandb', {})['experiment_id'] = args.experiment_id
 
     # Set seed
     set_seed(config['training']['seed'])
@@ -269,7 +291,8 @@ def main():
         sample_rate=config['data']['sample_rate'],
         max_length=config['data']['max_length'],
         subset_fraction=config['data'].get('subset_fraction', 1.0),
-        seed=config['training'].get('seed', 42)
+        seed=config['training'].get('seed', 42),
+        classes=config['data'].get('classes', None),
     )
     print(f"Number of classes: {num_classes}")
     print(f"Train batches: {len(train_loader)}")
@@ -301,6 +324,26 @@ def main():
 
     logger = MetricsLogger(config['logging']['log_dir'], exp_name)
     writer = SummaryWriter(os.path.join(config['logging']['tensorboard_dir'], exp_name))
+
+    # ── Weights & Biases ───────────────────────────────────────────────────────
+    wandb_cfg = config.get('wandb', {})
+    use_wandb = wandb_cfg.get('enabled', False)
+    if use_wandb:
+        if not WANDB_AVAILABLE:
+            print("Warning: wandb not installed — skipping W&B logging. Run: pip install wandb\n")
+            use_wandb = False
+        else:
+            exp_id = wandb_cfg.get('experiment_id') or None
+            wandb.init(
+                project=wandb_cfg.get('project', 'speech-ssm'),
+                id=exp_id,
+                resume='allow' if exp_id else None,
+                name=exp_name,
+                config={k: v for k, v in config.items() if k != 'logging'},
+            )
+            wandb.config.update({'num_classes': num_classes, 'num_params': num_params},
+                                allow_val_change=True)
+            print(f"W&B run: {wandb.run.url}\n")
 
     # Training loop
     print(f"Starting training for {config['training']['epochs']} epochs...\n")
@@ -336,6 +379,9 @@ def main():
         writer.add_scalar('Accuracy/train', train_acc, epoch)
         writer.add_scalar('Accuracy/val', val_acc, epoch)
         writer.add_scalar('Learning_rate', optimizer.param_groups[0]['lr'], epoch)
+
+        if use_wandb:
+            wandb.log({'epoch': epoch, **metrics})
 
         # Print summary
         print(f"Epoch {epoch}/{config['training']['epochs']} | "
@@ -386,6 +432,11 @@ def main():
             'hparam/test_acc': test_acc,
         }
     )
+
+    if use_wandb:
+        wandb.summary['best_val_acc'] = best_val_acc
+        wandb.summary['test_acc']     = test_acc
+        wandb.finish()
 
     # Cleanup
     logger.close()
