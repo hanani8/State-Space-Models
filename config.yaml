@@ -3,10 +3,11 @@
 # Dataset
 data:
   root: './data'
-  batch_size: 64
+  batch_size: 16
   num_workers: 4
   sample_rate: 16000
   max_length: 16000
+  subset_fraction: 0.3  # fraction of training data to use (0.0, 1.0]; 1.0 = full dataset
 
 # Model
 model: 'lstm'  # lstm, transformer, s4

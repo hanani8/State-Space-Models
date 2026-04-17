@@ -233,7 +233,9 @@ class SpeechDataModule(pl.LightningDataModule):
             batch_size=self.config['data']['batch_size'],
             num_workers=self.config['data']['num_workers'],
             sample_rate=self.config['data']['sample_rate'],
-            max_length=self.config['data']['max_length']
+            max_length=self.config['data']['max_length'],
+            subset_fraction=self.config['data'].get('subset_fraction', 1.0),
+            seed=self.config['training'].get('seed', 42)
         )
 
     def train_dataloader(self):

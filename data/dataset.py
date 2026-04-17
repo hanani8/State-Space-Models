@@ -4,7 +4,7 @@ SPEECHCOMMANDS dataset loader with configurable preprocessing.
 import os
 import torch
 import torchaudio
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader, Subset, random_split
 from typing import Tuple, Optional
 
 
@@ -102,7 +102,9 @@ def get_dataloaders(
     num_workers: int = 4,
     sample_rate: int = 16000,
     max_length: int = 16000,
-    download: bool = True
+    download: bool = True,
+    subset_fraction: float = 1.0,
+    seed: int = 42
 ) -> Tuple[DataLoader, DataLoader, DataLoader, int]:
     """
     Create train, validation, and test dataloaders.
@@ -118,6 +120,15 @@ def get_dataloaders(
         max_length=max_length,
         download=download
     )
+
+    num_classes = train_dataset.num_classes
+
+    if subset_fraction < 1.0:
+        n = len(train_dataset)
+        k = max(1, int(n * subset_fraction))
+        rng = torch.Generator().manual_seed(seed)
+        indices = torch.randperm(n, generator=rng)[:k].tolist()
+        train_dataset = Subset(train_dataset, indices)
 
     val_dataset = SpeechCommandsDataset(
         root=root,
@@ -160,4 +171,4 @@ def get_dataloaders(
         pin_memory=True
     )
 
-    return train_loader, val_loader, test_loader, train_dataset.num_classes
+    return train_loader, val_loader, test_loader, num_classes

@@ -267,7 +267,9 @@ def main():
         batch_size=config['data']['batch_size'],
         num_workers=config['data']['num_workers'],
         sample_rate=config['data']['sample_rate'],
-        max_length=config['data']['max_length']
+        max_length=config['data']['max_length'],
+        subset_fraction=config['data'].get('subset_fraction', 1.0),
+        seed=config['training'].get('seed', 42)
     )
     print(f"Number of classes: {num_classes}")
     print(f"Train batches: {len(train_loader)}")
